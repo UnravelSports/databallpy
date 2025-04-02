@@ -1,0 +1,103 @@
+name: Release Package
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: setup
+        uses: actions/checkout@v4
+      
+      - name: setup ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install packages
+        run: poetry install --with docs,developing
+
+      - name: Build documentation (only on ubuntu-latest)
+        run: make documentation
+
+      - name: Linter check
+        run: make formatcheck
+
+      - name: Create coverage report
+        run: make test
+
+  release:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: setup
+        uses: actions/checkout@v4
+
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install packages
+        run: poetry install --with docs,developing
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          version=$(poetry version -s)
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "Tag v$version already exists."
+            exit 1
+          fi
+
+      - name: Create tag
+        if: steps.check_tag.outcome != 'failure'
+        id: create_tag
+        run: |
+          version=$(poetry version -s)
+          git tag v$version
+          git push origin v$version
+
+      - name: Create GitHub release
+        if: steps.check_tag.outcome != 'failure'
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ steps.create_tag.outputs.version }}
+          release_name: Release ${{ steps.create_tag.outputs.version }}
+          draft: false
+          prerelease: false
+
+      - name: Check if version exists on PyPI
+        id: check_pypi
+        run: |
+          version=$(poetry version -s)
+          if curl -s -f https://pypi.org/project/YOUR_PACKAGE_NAME/$version/; then
+            echo "Version $version already exists on PyPI."
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        if: steps.check_pypi.outcome != 'failure'
+        run: poetry publish --build
+        env:
+          PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
