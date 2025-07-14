@@ -4,6 +4,8 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
+from dataclasses import replace
+
 from ...schemas import EventData, TrackingData
 
 
@@ -12,8 +14,8 @@ def _convert_datetime(kloppy_timestamp: timedelta, game_date, verbose: bool = Tr
         return kloppy_timestamp + game_date
     else:
         if verbose:
-            warnings.warn("Game date is None, using Unix epoch ('1970-01-01') as fall back date.")
-        return kloppy_timestamp + pd.Timestamp('1970-01-01')
+            warnings.warn("Game date is None, using Unix epoch ('1975-01-01') as fall back date.")
+        return kloppy_timestamp + pd.Timestamp('1975-01-01')
 
 def players_from_kloppy(tracking_dataset):
     from kloppy.domain import Ground
@@ -27,6 +29,7 @@ def players_from_kloppy(tracking_dataset):
                     return str(starting_position.parent).lower()
                 
         return "unspecified"
+
     
     home_players, away_players = [], []
     for player in tracking_dataset.metadata.teams[0].players + tracking_dataset.metadata.teams[1].players:
@@ -84,7 +87,12 @@ def convert_kloppy_tracking_dataset(tracking_dataset: "TrackingDataset") -> Trac
     for player in home_team.players + away_team.players:
         player_columns.update({f"{player.player_id}_x": f"{player.team.ground}_{player.jersey_no}_x"})
         player_columns.update({f"{player.player_id}_y": f"{player.team.ground}_{player.jersey_no}_y"})
-        
+
+    team_id_to_side = {
+        home_team.team_id: "home",
+        away_team.team_id: "away"
+    }
+
     tracking_dataframe = (
         tracking_dataset
         .to_df(
@@ -97,18 +105,21 @@ def convert_kloppy_tracking_dataset(tracking_dataset: "TrackingDataset") -> Trac
             "*_x",
             "*_y",
             engine="pandas"
-        ) 
+        )
         .assign(
-            timestamp=lambda x: x['timestamp'].apply(lambda ts: _convert_datetime(ts, tracking_dataset.metadata.date, verbose=False)),
-        )    
+            timestamp=lambda x: x['timestamp'].apply(
+                lambda ts: _convert_datetime(ts, tracking_dataset.metadata.date, verbose=False)
+            ),
+            team_possession=lambda x: x["ball_owning_team_id"].map(team_id_to_side),
+            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S")
+        )
         .rename(columns={
             "frame_id": "frame",
             "ball_state": "ball_status",
-            "ball_owning_team_id": "team_possession",
             "timestamp": "datetime",
-        } | player_columns
-        )
-    )    
+        } | player_columns)
+        .drop(columns=["ball_owning_team_id"])  # optional: drop if no longer needed
+    )
 
     return TrackingData(
         tracking_dataframe,
@@ -143,6 +154,11 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
         EventType.TAKE_ON.value: "dribble"
     }
 
+    home_team, away_team = event_dataset.metadata.teams
+    players = home_team.players + away_team.players
+
+    player_id_to_name = {player.player_id: player.name for player in players}
+
     event_data = (
         event_dataset
         .to_df(
@@ -171,8 +187,9 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
                 'own_goal',
                 x['event_type'].map(EVENT_MAP)
             ),
-            player=lambda x: str(x['player']),
+            player_name=lambda x: x["player_id"].map(player_id_to_name),
             is_successful=lambda x: x['is_successful'].astype(pd.BooleanDtype()),
+            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S")
         )   
         .rename(columns={
             "frame_id": "frame",
@@ -183,8 +200,7 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
             "coordinates_y": "start_y",
             "event_id": "original_event_id",
             "index": "event_id",
-            "event_type": "original_event",
-            "player": "player_name",
+            "event_type": "original_event"
         })
         .drop("result", axis=1)
     )
@@ -192,4 +208,3 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
     return EventData(
         event_data, provider=event_dataset.metadata.provider.value
     )
-    

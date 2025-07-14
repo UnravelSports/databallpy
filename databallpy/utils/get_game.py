@@ -3,6 +3,8 @@ import os
 
 import pandas as pd
 
+import warnings
+
 from databallpy.data_parsers import Metadata
 from databallpy.data_parsers.event_data_parsers import (
     load_instat_event_data,
@@ -18,7 +20,7 @@ from databallpy.data_parsers.kloppy_parsers import (
     convert_kloppy_event_dataset,
     convert_kloppy_tracking_dataset,
     periods_from_kloppy,
-    players_from_kloppy,
+    players_from_kloppy
 )
 from databallpy.data_parsers.tracking_data_parsers import (
     load_inmotio_tracking_data,
@@ -42,6 +44,7 @@ from databallpy.utils.align_player_ids import align_player_ids
 from databallpy.utils.game_utils import create_event_attributes_dataframe
 from databallpy.utils.logging import create_logger, logging_wrapper
 from databallpy.utils.warnings import deprecated
+from databallpy.utils.constants import MISSING_INT
 
 LOGGER = create_logger(__name__)
 
@@ -791,17 +794,66 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
         to_coordinate_system="secondspectrum",
         to_orientation=Orientation.STATIC_HOME_AWAY
     )
-    
+
+    if tracking_dataset.metadata.provider != event_dataset.metadata.provider:
+        # Need to make PR for kloppy statsbomb to specify which players did not sub in.
+
+        # tracking_home, tracking_away = tracking_dataset.metadata.teams
+        # event_home, event_away = event_dataset.metadata.teams
+
+        # # Check number of players
+        # if (
+        #     len(tracking_home.players) != len(event_home.players) or
+        #     len(tracking_away.players) != len(event_away.players)
+        # ):
+        #     raise ValueError(
+        #         "Mismatch in number of players between tracking and event datasets "
+        #         f"(home: {len(tracking_home.players)} vs {len(event_home.players)}, "
+        #         f"away: {len(tracking_away.players)} vs {len(event_away.players)})"
+        #     )
+
+        # # Check matching jersey numbers
+        # def get_jersey_set(players):
+        #     return set(player.jersey_number for player in players)
+
+        # home_tracking_jerseys = get_jersey_set(tracking_home.players)
+        # home_event_jerseys = get_jersey_set(event_home.players)
+        # away_tracking_jerseys = get_jersey_set(tracking_away.players)
+        # away_event_jerseys = get_jersey_set(event_away.players)
+
+        # if home_tracking_jerseys != home_event_jerseys:
+        #     raise ValueError(
+        #         f"Mismatch in home team jersey numbers: "
+        #         f"tracking={home_tracking_jerseys}, event={home_event_jerseys}"
+        #     )
+
+        # if away_tracking_jerseys != away_event_jerseys:
+        #     raise ValueError(
+        #         f"Mismatch in away team jersey numbers: "
+        #         f"tracking={away_tracking_jerseys}, event={away_event_jerseys}"
+        #     )
+
+        tracking_dataset.metadata.teams[0].name = event_dataset.metadata.teams[0].name
+        tracking_dataset.metadata.teams[1].name = event_dataset.metadata.teams[1].name
+        tracking_dataset.metadata.teams[0].team_id = event_dataset.metadata.teams[0].team_id
+        tracking_dataset.metadata.teams[1].team_id = event_dataset.metadata.teams[1].team_id
+
     periods = periods_from_kloppy(event_dataset, tracking_dataset)
+
+    if tracking_dataset.metadata.date != event_dataset.metadata.date:
+        warnings.warn("Game dates in kloppy TrackingDataset and EventDataset are not equal. Setting both to None.", UserWarning)
+        tracking_dataset.metadata.date = event_dataset.metadata.date = None
     
     tracking_data: TrackingData = convert_kloppy_tracking_dataset(tracking_dataset)
     event_data: EventData = convert_kloppy_event_dataset(event_dataset)
         
     pitch_dimensions = (
-        tracking_dataset.metadata.pitch_dimensions.pitch_length,
-        tracking_dataset.metadata.pitch_dimensions.pitch_width,
+        float(tracking_dataset.metadata.pitch_dimensions.pitch_length),
+        float(tracking_dataset.metadata.pitch_dimensions.pitch_width),
     )
-    home_players, away_players = players_from_kloppy(tracking_dataset)
+
+    home_players, away_players = players_from_kloppy(event_dataset)
+
     
     home_team = tracking_dataset.metadata.teams[0]
     away_team = tracking_dataset.metadata.teams[1]
@@ -813,13 +865,13 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
         home_team_id=home_team.team_id,
         home_team_name=home_team.name,
         home_players=home_players,
-        home_score=event_dataset.metadata.score.home,
+        home_score=MISSING_INT,
         home_formation=None,
         away_team_id=away_team.team_id,
         away_team_name=away_team.name,
         away_players=away_players,
         away_formation=None,
-        away_score=event_dataset.metadata.score.away,
+        away_score=MISSING_INT,
         country="",
         shot_events=pd.DataFrame(),
         dribble_events=pd.DataFrame(),
