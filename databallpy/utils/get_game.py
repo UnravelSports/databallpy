@@ -796,43 +796,6 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
     )
 
     if tracking_dataset.metadata.provider != event_dataset.metadata.provider:
-        # Need to make PR for kloppy statsbomb to specify which players did not sub in.
-
-        # tracking_home, tracking_away = tracking_dataset.metadata.teams
-        # event_home, event_away = event_dataset.metadata.teams
-
-        # # Check number of players
-        # if (
-        #     len(tracking_home.players) != len(event_home.players) or
-        #     len(tracking_away.players) != len(event_away.players)
-        # ):
-        #     raise ValueError(
-        #         "Mismatch in number of players between tracking and event datasets "
-        #         f"(home: {len(tracking_home.players)} vs {len(event_home.players)}, "
-        #         f"away: {len(tracking_away.players)} vs {len(event_away.players)})"
-        #     )
-
-        # # Check matching jersey numbers
-        # def get_jersey_set(players):
-        #     return set(player.jersey_number for player in players)
-
-        # home_tracking_jerseys = get_jersey_set(tracking_home.players)
-        # home_event_jerseys = get_jersey_set(event_home.players)
-        # away_tracking_jerseys = get_jersey_set(tracking_away.players)
-        # away_event_jerseys = get_jersey_set(event_away.players)
-
-        # if home_tracking_jerseys != home_event_jerseys:
-        #     raise ValueError(
-        #         f"Mismatch in home team jersey numbers: "
-        #         f"tracking={home_tracking_jerseys}, event={home_event_jerseys}"
-        #     )
-
-        # if away_tracking_jerseys != away_event_jerseys:
-        #     raise ValueError(
-        #         f"Mismatch in away team jersey numbers: "
-        #         f"tracking={away_tracking_jerseys}, event={away_event_jerseys}"
-        #     )
-
         tracking_dataset.metadata.teams[0].name = event_dataset.metadata.teams[0].name
         tracking_dataset.metadata.teams[1].name = event_dataset.metadata.teams[1].name
         tracking_dataset.metadata.teams[0].team_id = event_dataset.metadata.teams[0].team_id
