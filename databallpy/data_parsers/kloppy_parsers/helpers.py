@@ -163,7 +163,8 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
         EventType.PASS.value: "pass",
         EventType.SHOT.value: "shot",
         EventType.CARRY.value: "dribble",
-        EventType.TAKE_ON.value: "dribble"
+        EventType.TAKE_ON.value: "dribble",
+        "GENERIC:Ball Receipt*": "reception"
     }
 
     home_team, away_team = event_dataset.metadata.teams
