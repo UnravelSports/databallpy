@@ -804,8 +804,8 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
     periods = periods_from_kloppy(event_dataset, tracking_dataset)
 
     if tracking_dataset.metadata.date != event_dataset.metadata.date:
-        warnings.warn("Game dates in kloppy TrackingDataset and EventDataset are not equal. Setting both to None.", UserWarning)
-        tracking_dataset.metadata.date = event_dataset.metadata.date = None
+        warnings.warn("Game dates in kloppy TrackingDataset and EventDataset are not equal. Setting both to pd.Timestamp('1975-01-01').", UserWarning)
+        tracking_dataset.metadata.date = event_dataset.metadata.date = pd.Timestamp('1975-01-01')
     
     tracking_data: TrackingData = convert_kloppy_tracking_dataset(tracking_dataset)
     event_data: EventData = convert_kloppy_event_dataset(event_dataset)

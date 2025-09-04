@@ -143,6 +143,61 @@ def synchronise_tracking_and_event_data(
                 extra_event_info.at[event_index, "cost_breakdown"] = cost_breakdown[frame][event]
 
         batch_first_datetime = batch_end_datetime
+    
+    duplicates = (
+        extra_tracking_info.dropna(subset=["event_id"])
+        .groupby("event_id")["event_id"]
+        .count()
+    )
+    duplicates = duplicates[duplicates > 1]
+
+    if not duplicates.empty:
+        dup_frames = (
+            extra_tracking_info.dropna(subset=["event_id"])
+            .groupby("event_id").apply(
+                lambda g: list(g.index)
+            )
+        )
+        # Only keep the ones with >1 frames
+        dup_frames = dup_frames[dup_frames.apply(len) > 1]
+
+        print(
+            "Multiple frames matched to the same event. "
+            f"Details:\n{dup_frames.to_dict()}"
+        )
+
+        # Deduplicate: keep only the frame with the highest certainty
+        event_certainty = (
+            extra_tracking_info.dropna(subset=["event_id", "sync_certainty"])
+            .reset_index()
+            .rename(columns={"index": "tracking_frame"})
+        )
+
+        best_matches = (
+            event_certainty.loc[
+                event_certainty.groupby("event_id")["sync_certainty"].idxmax()
+            ]
+        )
+
+        # Reset both DataFrames
+        extra_tracking_info.loc[:, ["databallpy_event", "event_id", "sync_certainty", "cost_breakdown"]] = None
+        extra_event_info.loc[:, ["tracking_frame", "sync_certainty", "cost_breakdown"]] = None
+
+        # Re-populate with only best matches
+        for row in best_matches.itertuples(index=False):
+            event_id = row.event_id
+            tracking_frame = row.tracking_frame
+            event_index = event_data.index[event_data["event_id"] == event_id][0]
+
+            # direct assignments
+            extra_tracking_info.at[tracking_frame, "databallpy_event"] = row.databallpy_event
+            extra_tracking_info.at[tracking_frame, "event_id"] = event_id
+            extra_tracking_info.at[tracking_frame, "sync_certainty"] = row.sync_certainty
+            extra_tracking_info.at[tracking_frame, "cost_breakdown"] = row.cost_breakdown
+
+            extra_event_info.at[event_index, "tracking_frame"] = tracking_frame
+            extra_event_info.at[event_index, "sync_certainty"] = row.sync_certainty
+            extra_event_info.at[event_index, "cost_breakdown"] = row.cost_breakdown
 
     return extra_tracking_info, extra_event_info
 
