@@ -226,7 +226,8 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
             player_name=lambda x: x["player_id"].map(player_id_to_name),
             recipient_name=lambda x: x["receiver_player_id"].map(player_id_to_name),
             is_successful=lambda x: x['is_successful'].astype(pd.BooleanDtype()),
-            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S")
+            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S"),
+            player=lambda x: x["player"].astype(str)
         )   
         .rename(columns={
             "frame_id": "frame",
