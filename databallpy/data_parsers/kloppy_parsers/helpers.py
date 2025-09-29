@@ -4,6 +4,8 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
+from dataclasses import replace
+
 from ...schemas import EventData, TrackingData
 
 
@@ -12,8 +14,8 @@ def _convert_datetime(kloppy_timestamp: timedelta, game_date, verbose: bool = Tr
         return kloppy_timestamp + game_date
     else:
         if verbose:
-            warnings.warn("Game date is None, using Unix epoch ('1970-01-01') as fall back date.")
-        return kloppy_timestamp + pd.Timestamp('1970-01-01')
+            warnings.warn("Game date is None, using Unix epoch ('1975-01-01') as fall back date.")
+        return kloppy_timestamp + pd.Timestamp('1975-01-01')
 
 def players_from_kloppy(tracking_dataset):
     from kloppy.domain import Ground
@@ -27,6 +29,7 @@ def players_from_kloppy(tracking_dataset):
                     return str(starting_position.parent).lower()
                 
         return "unspecified"
+
     
     home_players, away_players = [], []
     for player in tracking_dataset.metadata.teams[0].players + tracking_dataset.metadata.teams[1].players:
@@ -45,7 +48,12 @@ def players_from_kloppy(tracking_dataset):
             away_players.append(p)
     return pd.DataFrame(home_players), pd.DataFrame(away_players)
 
-def periods_from_kloppy(event_dataset, tracking_dataset) -> pd.DataFrame:    
+def periods_from_kloppy(event_dataset, tracking_dataset) -> pd.DataFrame:
+
+    #Accounts for when penalties aren't tracked in tracking data
+    if len(event_dataset.metadata.periods) == 5 and len(tracking_dataset.metadata.periods) == 4:
+        event_dataset.metadata.periods = event_dataset.metadata.periods[:-1]
+
     assert len(event_dataset.metadata.periods) == len(tracking_dataset.metadata.periods)
     
     game_date = tracking_dataset.metadata.date
@@ -84,7 +92,12 @@ def convert_kloppy_tracking_dataset(tracking_dataset: "TrackingDataset") -> Trac
     for player in home_team.players + away_team.players:
         player_columns.update({f"{player.player_id}_x": f"{player.team.ground}_{player.jersey_no}_x"})
         player_columns.update({f"{player.player_id}_y": f"{player.team.ground}_{player.jersey_no}_y"})
-        
+
+    team_id_to_side = {
+        home_team.team_id: "home",
+        away_team.team_id: "away"
+    }
+
     tracking_dataframe = (
         tracking_dataset
         .to_df(
@@ -97,18 +110,28 @@ def convert_kloppy_tracking_dataset(tracking_dataset: "TrackingDataset") -> Trac
             "*_x",
             "*_y",
             engine="pandas"
-        ) 
+        )
         .assign(
-            timestamp=lambda x: x['timestamp'].apply(lambda ts: _convert_datetime(ts, tracking_dataset.metadata.date, verbose=False)),
-        )    
+            timestamp=lambda x: x.apply(
+                lambda row: _convert_datetime(row["timestamp"], tracking_dataset.metadata.date, verbose=False)
+                + (
+                    pd.Timedelta(minutes=45) if row["period_id"] == 2 else
+                    pd.Timedelta(minutes=90) if row["period_id"] == 3 else
+                    pd.Timedelta(minutes=105) if row["period_id"] == 4 else
+                    pd.Timedelta(0)
+                ),
+                axis=1
+            ),
+            team_possession=lambda x: x["ball_owning_team_id"].map(team_id_to_side),
+            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S")
+        )
         .rename(columns={
             "frame_id": "frame",
             "ball_state": "ball_status",
-            "ball_owning_team_id": "team_possession",
             "timestamp": "datetime",
-        } | player_columns
-        )
-    )    
+        } | player_columns)
+        .drop(columns=["ball_owning_team_id"])  # optional: drop if no longer needed
+    )
 
     return TrackingData(
         tracking_dataframe,
@@ -140,8 +163,14 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
         EventType.PASS.value: "pass",
         EventType.SHOT.value: "shot",
         EventType.CARRY.value: "dribble",
-        EventType.TAKE_ON.value: "dribble"
+        EventType.TAKE_ON.value: "dribble",
+        "GENERIC:Ball Receipt*": "reception"
     }
+
+    home_team, away_team = event_dataset.metadata.teams
+    players = home_team.players + away_team.players
+
+    player_id_to_name = {player.player_id: player.name for player in players}
 
     event_data = (
         event_dataset
@@ -149,11 +178,15 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
             "period_id",
             "event_id",
             "timestamp",
+            "end_timestamp",
             "player_id",
             "player",
             "team_id",
             "coordinates_x",
             "coordinates_y",
+            "end_coordinates_x",
+            "end_coordinates_y",
+            "receiver_player_id",
             "event_type",
             "result",
             is_successful=lambda event: None if event.result is None else True if event.result in IS_SUCCESSFUL else False,
@@ -165,26 +198,52 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
         .reset_index(drop=True)
         .reset_index()
         .assign(
-            timestamp=lambda x: x['timestamp'].apply(lambda ts: _convert_datetime(ts, event_dataset.metadata.date, verbose=False)),
+            timestamp=lambda x: x.apply(
+                lambda row: _convert_datetime(row["timestamp"], event_dataset.metadata.date, verbose=False)
+                + (
+                    pd.Timedelta(minutes=45) if row["period_id"] == 2 else
+                    pd.Timedelta(minutes=90) if row["period_id"] == 3 else
+                    pd.Timedelta(minutes=105) if row["period_id"] == 4 else
+                    pd.Timedelta(0)
+                ),
+                axis=1
+            ),
+            end_timestamp=lambda x: x.apply(
+                lambda row: _convert_datetime(row["end_timestamp"], event_dataset.metadata.date, verbose=False)
+                + (
+                    pd.Timedelta(minutes=45) if row["period_id"] == 2 else
+                    pd.Timedelta(minutes=90) if row["period_id"] == 3 else
+                    pd.Timedelta(minutes=105) if row["period_id"] == 4 else
+                    pd.Timedelta(0)
+                ),
+                axis=1
+            ),
             databallpy_event = lambda x: np.where(
                 x['result'] == ShotResult.OWN_GOAL,
                 'own_goal',
                 x['event_type'].map(EVENT_MAP)
             ),
-            player=lambda x: str(x['player']),
+            player_name=lambda x: x["player_id"].map(player_id_to_name),
+            recipient_name=lambda x: x["receiver_player_id"].map(player_id_to_name),
             is_successful=lambda x: x['is_successful'].astype(pd.BooleanDtype()),
+            gametime_td=lambda x: x["timestamp"].dt.strftime("%M:%S"),
+            player=lambda x: x["player"].astype(str)
         )   
         .rename(columns={
             "frame_id": "frame",
             "ball_state": "ball_status",
             "ball_owning_team_id": "team_possession",
             "timestamp": "datetime",
+            "end_timestamp": "datetime_end",
             "coordinates_x": "start_x",
             "coordinates_y": "start_y",
+            "end_coordinates_x": "end_x",
+            "end_coordinates_y": "end_y",
+            "receiver_player_id": "to_player_id",
+            "recipient_name": "to_player_name",
             "event_id": "original_event_id",
             "index": "event_id",
-            "event_type": "original_event",
-            "player": "player_name",
+            "event_type": "original_event"
         })
         .drop("result", axis=1)
     )
@@ -192,4 +251,3 @@ def convert_kloppy_event_dataset(event_dataset: "EventDataset") -> EventData:
     return EventData(
         event_data, provider=event_dataset.metadata.provider.value
     )
-    
