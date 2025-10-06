@@ -9,7 +9,9 @@ from dataclasses import replace
 from ...schemas import EventData, TrackingData
 
 
-def _convert_datetime(kloppy_timestamp: timedelta, game_date, verbose: bool = True) -> pd.Timestamp:
+def _convert_datetime(kloppy_timestamp: timedelta, game_date, verbose: bool = True):
+    if kloppy_timestamp is None:
+        return None
     if game_date is not None:
         return kloppy_timestamp + game_date
     else:
@@ -55,13 +57,15 @@ def periods_from_kloppy(event_dataset, tracking_dataset) -> pd.DataFrame:
         event_dataset.metadata.periods = event_dataset.metadata.periods[:-1]
 
     assert len(event_dataset.metadata.periods) == len(tracking_dataset.metadata.periods)
-    
+
     game_date = tracking_dataset.metadata.date
     periods = []
+    
+    # the Game.periods object must always have 5 enties
     for i in range(5):
         period_records_td = tracking_dataset.filter(lambda frame: frame.period.id == i + 1)
         period_records_ed = event_dataset.filter(lambda frame: frame.period.id == i + 1)
-        
+
         if len(period_records_td.records) == 0:
             periods.append({
                 "period_id": i + 1,
@@ -72,17 +76,41 @@ def periods_from_kloppy(event_dataset, tracking_dataset) -> pd.DataFrame:
                 "start_timestamp_ed": None,
                 "end_timestamp_ed": None,
             })
+            continue
+        
+        period_td = tracking_dataset.metadata.periods[i]
+        period_ed = event_dataset.metadata.periods[i]
+        
+        if isinstance(period_td.start_timestamp, timedelta) or period_td.start_timestamp is None:
+            start_timestamp_td = _convert_datetime(period_records_td[0].timestamp, game_date, verbose=False)
         else:
-            periods.append({
-                "period_id": i + 1,
-                "start_frame": period_records_td[0].frame_id,
-                "end_frame": period_records_td[-1].frame_id,
-                "start_timestamp_td": _convert_datetime(period_records_td[0].timestamp, game_date, verbose=True if i == 0 else False),
-                "end_timestamp_td": _convert_datetime(period_records_td[-1].timestamp, game_date, verbose=False),
-                "start_timestamp_ed": _convert_datetime(period_records_ed[0].timestamp, game_date, verbose=False),
-                "end_timestamp_ed": _convert_datetime(period_records_ed[-1].timestamp, game_date, verbose=False),
-            })
-            
+            start_timestamp_td = period_td.start_timestamp
+
+        if isinstance(period_td.end_timestamp, timedelta) or period_td.end_timestamp is None:
+            end_timestamp_td = _convert_datetime(period_records_td[-1].timestamp, game_date, verbose=False)
+        else:
+            end_timestamp_td = period_td.end_timestamp
+
+        if isinstance(period_ed.start_timestamp, timedelta) or period_ed.start_timestamp is None:
+            start_timestamp_ed = _convert_datetime(period_records_ed[0].timestamp, game_date, verbose=False)
+        else:
+            start_timestamp_ed = period_ed.start_timestamp
+
+        if isinstance(period_ed.end_timestamp, timedelta) or period_ed.end_timestamp is None:
+            end_timestamp_ed = _convert_datetime(period_records_ed[-1].timestamp, game_date, verbose=False)
+        else:
+            end_timestamp_ed = period_ed.end_timestamp
+    
+        periods.append({
+            "period_id": i + 1,
+            "start_frame": period_records_td[0].frame_id,
+            "end_frame": period_records_td[-1].frame_id,
+            "start_timestamp_td": start_timestamp_td,
+            "end_timestamp_td": end_timestamp_td,
+            "start_timestamp_ed": start_timestamp_ed,
+            "end_timestamp_ed": end_timestamp_ed,
+        })
+    
     return pd.DataFrame(periods)
 
 def convert_kloppy_tracking_dataset(tracking_dataset: "TrackingDataset") -> TrackingData:

@@ -816,10 +816,10 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
     )
 
     home_players, away_players = players_from_kloppy(event_dataset)
-
     
     home_team = tracking_dataset.metadata.teams[0]
     away_team = tracking_dataset.metadata.teams[1]
+        
     return Game(
         tracking_data=tracking_data,
         event_data=event_data,
@@ -836,9 +836,9 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
         away_formation=None,
         away_score=MISSING_INT,
         country="",
-        shot_events=pd.DataFrame(),
-        dribble_events=pd.DataFrame(),
-        pass_events=pd.DataFrame(),
+        shot_events=event_data[event_data['databallpy_event'] == 'shot'],
+        dribble_events=event_data[event_data['databallpy_event'] == 'dribble'],
+        pass_events=event_data[event_data['databallpy_event'] == 'pass'],
         allow_synchronise_tracking_and_event_data=True
     )
 

@@ -749,6 +749,7 @@ def check_inputs_game_object(game: Game):
         )
     if "period_id" not in game.periods.columns:
         raise ValueError("'period' should be one of the columns in period_frames")
+    
     if any(
         [
             x not in game.periods["period_id"].value_counts().index
