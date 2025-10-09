@@ -48,7 +48,6 @@ from databallpy.utils.constants import MISSING_INT
 from databallpy.utils.game_utils import create_event_attributes_dataframe
 from databallpy.utils.logging import create_logger, logging_wrapper
 from databallpy.utils.warnings import deprecated
-from databallpy.utils.constants import MISSING_INT
 
 LOGGER = create_logger(__name__)
 
@@ -841,14 +840,14 @@ def get_game_from_kloppy(tracking_dataset: "TrackingDataset", event_dataset: "Ev
         home_team_id=home_team.team_id,
         home_team_name=home_team.name,
         home_players=home_players,
-        home_score=MISSING_INT,
+        home_score=MISSING_INT if event_dataset.metadata.score.home is None else event_dataset.metadata.score.home,
         home_formation=None,
         away_team_id=away_team.team_id,
         away_team_name=away_team.name,
         away_players=away_players,
         away_formation=None,
-        away_score=MISSING_INT,
-        country="",
+        away_score=MISSING_INT if event_dataset.metadata.score.away is None else event_dataset.metadata.score.away,
+        country=None,
         shot_events=event_data[event_data['databallpy_event'] == 'shot'],
         dribble_events=event_data[event_data['databallpy_event'] == 'dribble'],
         pass_events=event_data[event_data['databallpy_event'] == 'pass'],
