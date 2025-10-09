@@ -829,7 +829,7 @@ def check_inputs_game_object(game: Game):
         if "start_frame" not in period_row.index:
             continue
         frame = period_row["start_frame"]
-        if len(game.tracking_data[game.tracking_data["frame"] == frame].index) == 0:
+        if game.tracking_data.empty or len(game.tracking_data[game.tracking_data["frame"] == frame].index) == 0:
             continue
         idx = game.tracking_data[game.tracking_data["frame"] == frame].index[0]
         period = period_row["period_id"]
